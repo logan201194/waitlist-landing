@@ -27,6 +27,7 @@ export async function POST(req) {
       console.error('[Supabase]', dbErr);
     }
      try {
+    console.log('[Resend KEY]', process.env.RESEND_API_KEY ? 'present' : 'undefined');
     const info = await resend.emails.send({
       from: 'Logan <welcome@discovercro.com>',
       to: email,
