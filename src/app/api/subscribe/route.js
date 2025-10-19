@@ -26,17 +26,17 @@ export async function POST(req) {
     } catch (dbErr) {
       console.error('[Supabase]', dbErr);
     }
-
-    try {
-      await resend.emails.send({
-        from: 'Logan <welcome@discovercro.com>',              // ↙ use your domain
-        to: email,
-        subject: 'Discovercro Wait-List Confirmation',
-        html: makeHtml(firstName)
-      });
-    } catch (mailErr) {
-      console.error('[Resend]', mailErr);
-    }
+     try {
+    const info = await resend.emails.send({
+      from: 'Logan <welcome@discovercro.com>',
+      to: email,
+      subject: 'Discovercro Wait-List Confirmation',
+      html: makeHtml(firstName)
+    });
+    console.log('[Resend OK]', info);        // ⬅︎ should show { id: '...' }
+  } catch (mailErr) {
+    console.error('[Resend ERR]', mailErr);   // ⬅︎ prints real cause
+  }
   })();                                                      // << no await
 
   return fastResponse;
