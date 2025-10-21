@@ -7,7 +7,7 @@ const {
   SUPABASE_URL,
   SUPABASE_SERVICE_ROLE_KEY,
   RESEND_API_KEY,
-  RESEND_FROM_EMAIL = 'Discovercro <welcome@discovercro.com>',
+  RESEND_FROM_EMAIL = 'DiscoverCRO <welcome@discovercro.com>',
 } = process.env;
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
@@ -42,7 +42,7 @@ export async function POST(req) {
     const { data, error: mailErr } = await resend.emails.send({
       from: RESEND_FROM_EMAIL,
       to: [email],
-      subject: 'Discovercro – wait-list confirmed!',
+      subject: 'DiscoverCRO –Wait-List Confirmed!',
       html: makeHtml(name.split(' ')[0] || 'there'),
     });
 
@@ -79,13 +79,13 @@ function makeHtml(firstName) {
   <table width="600" cellpadding="0" cellspacing="0" role="presentation"
          style="background:#ffffff;border-radius:8px;overflow:hidden;">
    <tr><td style="background:#111827;padding:32px;text-align:center;">
-     <h1 style="color:#ffffff;margin:0;font-size:24px;">Discovercro</h1>
+     <h1 style="color:#ffffff;margin:0;font-size:24px;">DiscoverCRO</h1>
    </td></tr>
 
    <tr><td style="padding:32px; color:#111827; font-size:16px;">
      <p style="margin:0 0 16px;">Hey ${firstName},</p>
      <p style="margin:0 0 24px;">
-       🎉 Your seat on the <strong>Discovercro</strong> wait-list is confirmed!
+       🎉 Your seat on the <strong>DiscoverCRO</strong> wait-list is confirmed!
        You’ll be first to know when we launch.
      </p>
      <p style="margin:0 0 24px;">Follow our build-in-public journey:</p>
