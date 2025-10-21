@@ -19,44 +19,47 @@ if (!RESEND_API_KEY) {
 
 /* ─── 2  SDKs ---------------------------------------------------------- */
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-const resend   = new Resend(RESEND_API_KEY);
+const resend    = new Resend(RESEND_API_KEY);
 
-/* ─── 3  POST /api/subscribe  (instant 202 response) ------------------ */
+/* ─── 3  POST /api/subscribe ------------------------------------------ */
 export async function POST(req) {
-  const { name = '', email = '' } = (await req.json()) ?? {};
-  if (!email) {
-    return json({ ok: false, error: 'Email is required' }, 400);
-  }
+  try {
+    const { name = '', email = '' } = await req.json() ?? {};
+    if (!email) {
+      return json({ ok: false, error: 'Email is required' }, 400);
+    }
 
-  /* ---------- fire-and-forget tasks (do NOT await) ---------- */
-  (async () => {
-    /* 3-a  wait-list upsert */
+    /* 3-a  wait-list row (dedup on e-mail) */
     const { error: dbErr } = await supabase
       .from('waitlist')
       .upsert({ email, name }, { onConflict: 'email' });
-    if (dbErr) console.error('[Supabase]', dbErr);
+    if (dbErr) {
+      console.error('[Supabase]', dbErr);
+      // don’t abort; we still try to send the mail
+    }
 
     /* 3-b  welcome e-mail */
-    try {
-      const { data, error: mailErr } = await resend.emails.send({
-        from: RESEND_FROM_EMAIL,
-        to: [email],
-        subject: 'Discovercro – wait-list confirmed!',
-        html: makeHtml(name.split(' ')[0] || 'there'),
-      });
-      if (mailErr) console.error('[Resend ERR]', mailErr);
-      else         console.log('[Resend OK]', data);       // id, to, subject…
-    } catch (e) {
-      console.error('[Resend catch]', e);
-    }
-  })();  // runs in background without blocking the response
-  /* ---------------------------------------------------------- */
+    const { data, error: mailErr } = await resend.emails.send({
+      from: RESEND_FROM_EMAIL,
+      to: [email],
+      subject: 'Discovercro – wait-list confirmed!',
+      html: makeHtml(name.split(' ')[0] || 'there'),
+    });
 
-  /* instant acknowledgement to the browser */
-  return json({ ok: true, accepted: true }, 202);
+    if (mailErr) {
+      console.error('[Resend ERR]', mailErr);
+      return json({ ok: false, error: mailErr }, 500);
+    }
+
+    console.log('[Resend OK]', data);   // id, to, subject…
+    return json({ ok: true, id: data.id }, 200);
+  } catch (e) {
+    console.error('[Route Error]', e);
+    return json({ ok: false, error: 'Unexpected server error' }, 500);
+  }
 }
 
-/* ─── 4  Helpers ------------------------------------------------------ */
+/* ─── 4  Helper -------------------------------------------------------- */
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
