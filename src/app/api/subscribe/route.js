@@ -1,44 +1,118 @@
 // app/api/subscribe/route.js  (Next.js App Router)
 import { Resend } from 'resend';
-import { createClient } from '@supabase/supabase-js';
+import { google } from 'googleapis';
+
+/* ─── 0  Next runtime -------------------------------------------------- */
+// googleapis needs Node runtime (not Edge)
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 /* ─── 1  Environment -------------------------------------------------- */
 const {
-  SUPABASE_URL,
-  SUPABASE_SERVICE_ROLE_KEY,
   RESEND_API_KEY,
   RESEND_FROM_EMAIL = 'DiscoverCRO <welcome@discovercro.com>',
+  GOOGLE_SHEETS_ID,
+  GOOGLE_SHEETS_TAB = 'Waitlist',
+  GOOGLE_CLIENT_EMAIL,
+  GOOGLE_PRIVATE_KEY,
 } = process.env;
 
-if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-  throw new Error('Missing Supabase env vars');
-}
-if (!RESEND_API_KEY) {
-  throw new Error('Missing RESEND_API_KEY');
+if (!RESEND_API_KEY) throw new Error('Missing RESEND_API_KEY');
+if (!GOOGLE_SHEETS_ID || !GOOGLE_CLIENT_EMAIL || !GOOGLE_PRIVATE_KEY) {
+  throw new Error('Missing Google Sheets env vars');
 }
 
 /* ─── 2  SDKs ---------------------------------------------------------- */
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-const resend    = new Resend(RESEND_API_KEY);
+const resend = new Resend(RESEND_API_KEY);
+
+function isValidEmail(email) {
+  return typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function json(body, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+function googleSheetsClient() {
+  const auth = new google.auth.JWT(
+    GOOGLE_CLIENT_EMAIL,
+    undefined,
+    GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+    ['https://www.googleapis.com/auth/spreadsheets']
+  );
+  return google.sheets({ version: 'v4', auth });
+}
 
 /* ─── 3  POST /api/subscribe ------------------------------------------ */
 export async function POST(req) {
   try {
-    const { name = '', email = '' } = await req.json() ?? {};
-    if (!email) {
+    const { name = '', email = '' } = (await req.json()) ?? {};
+    if (!email || !isValidEmail(email)) {
       return json({ ok: false, error: 'Email is required' }, 400);
     }
 
-    /* 3-a  wait-list row (dedup on e-mail) */
-    const { error: dbErr } = await supabase
-      .from('waitlist')
-      .upsert({ email, name }, { onConflict: 'email' });
-    if (dbErr) {
-      console.error('[Supabase]', dbErr);
-      // don’t abort; we still try to send the mail
+    const ip =
+      req.headers.get('x-forwarded-for') ||
+      req.headers.get('x-real-ip') ||
+      'n/a';
+    const userAgent = req.headers.get('user-agent') || 'n/a';
+
+    /* 3-a  wait-list row (upsert on e-mail) */
+    try {
+      const sheets = googleSheetsClient();
+
+      // 1) Read the email column to see if it exists already
+      //    Assumes row 1 is headers, emails live in column B.
+      const existing = await sheets.spreadsheets.values.get({
+        spreadsheetId: GOOGLE_SHEETS_ID,
+        range: `${GOOGLE_SHEETS_TAB}!B:B`,
+      });
+
+      const rows = existing.data.values || []; // e.g. [["email"], ["a@x.com"], ...]
+      const lower = email.trim().toLowerCase();
+
+      // Find index where this email exists (case-insensitive)
+      let foundRow = -1;
+      for (let i = 0; i < rows.length; i++) {
+        if ((rows[i][0] || '').toString().trim().toLowerCase() === lower) {
+          foundRow = i + 1; // Google Sheets rows are 1-based
+          break;
+        }
+      }
+
+      if (foundRow >= 2) {
+        // 2) Update name (col C) for the found row; keep timestamp intact
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: GOOGLE_SHEETS_ID,
+          range: `${GOOGLE_SHEETS_TAB}!C${foundRow}:E${foundRow}`,
+          valueInputOption: 'USER_ENTERED',
+          requestBody: {
+            // name, ip, userAgent
+            values: [[name, ip, userAgent]],
+          },
+        });
+      } else {
+        // 3) Append a new row
+        await sheets.spreadsheets.values.append({
+          spreadsheetId: GOOGLE_SHEETS_ID,
+          range: `${GOOGLE_SHEETS_TAB}!A:F`,
+          valueInputOption: 'USER_ENTERED',
+          insertDataOption: 'INSERT_ROWS',
+          requestBody: {
+            // timestamp, email, name, ip, userAgent, notes
+            values: [[new Date().toISOString(), email, name, ip, userAgent, '']],
+          },
+        });
+      }
+    } catch (dbErr) {
+      console.error('[Sheets]', dbErr);
+      // do not abort; still try to send the email to match your current behavior
     }
 
-    /* 3-b  welcome e-mail */
+    /* 3-b  welcome e-mail (unchanged) */
     const { data, error: mailErr } = await resend.emails.send({
       from: RESEND_FROM_EMAIL,
       to: [email],
@@ -51,7 +125,7 @@ export async function POST(req) {
       return json({ ok: false, error: mailErr }, 500);
     }
 
-    console.log('[Resend OK]', data);   // id, to, subject…
+    console.log('[Resend OK]', data); // id, to, subject…
     return json({ ok: true, id: data.id }, 200);
   } catch (e) {
     console.error('[Route Error]', e);
@@ -60,13 +134,6 @@ export async function POST(req) {
 }
 
 /* ─── 4  Helper -------------------------------------------------------- */
-function json(body, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'Content-Type': 'application/json' },
-  });
-}
-
 function makeHtml(firstName) {
   const TW = 'https://cdn-icons-png.flaticon.com/512/733/733579.png';
   const FB = 'https://cdn-icons-png.flaticon.com/512/145/145802.png';
