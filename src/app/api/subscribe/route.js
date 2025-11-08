@@ -9,12 +9,12 @@ export const dynamic = 'force-dynamic';
 
 /* ─── 1  Environment -------------------------------------------------- */
 const {
-  RESEND_API_KEY,
+  RESEND_API_KEY= 're_MMuXgsXr_PUS1aW1MZY7gHFgJGgbcXWuK',
   RESEND_FROM_EMAIL = 'DiscoverCRO <welcome@discovercro.com>',
-  GOOGLE_SHEETS_ID,
+  GOOGLE_SHEETS_ID = '19NgWjO0dzS2cRkiC9khngNmuHg0zSdj8aptbxcZsM40',
   GOOGLE_SHEETS_TAB = 'Waitlist',
-  GOOGLE_CLIENT_EMAIL,
-  GOOGLE_PRIVATE_KEY,
+  GOOGLE_CLIENT_EMAIL = 'discovercro@discovercro.iam.gserviceaccount.com' ,
+  GOOGLE_PRIVATE_KEY = '802723cac488e1b1c528b2820917c01f6daabd73',
 } = process.env;
 
 if (!RESEND_API_KEY) throw new Error('Missing RESEND_API_KEY');
